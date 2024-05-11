@@ -1737,7 +1737,7 @@ dependencies = [
 [[package]]
 name = "librespot-audio"
 version = "0.5.0-dev"
-source = "git+https://github.com/librespot-org/librespot?branch=dev#f037e46aee631837a0553ccfdbc7866752fd0f5d"
+source = "git+https://github.com/photovoltex/librespot?rev=a3471dd8d70b07c13eb4cf4c3741f4e39e3b3592#a3471dd8d70b07c13eb4cf4c3741f4e39e3b3592"
 dependencies = [
  "aes",
  "byteorder",
@@ -1757,7 +1757,7 @@ dependencies = [
 [[package]]
 name = "librespot-core"
 version = "0.5.0-dev"
-source = "git+https://github.com/librespot-org/librespot?branch=dev#f037e46aee631837a0553ccfdbc7866752fd0f5d"
+source = "git+https://github.com/photovoltex/librespot?rev=a3471dd8d70b07c13eb4cf4c3741f4e39e3b3592#a3471dd8d70b07c13eb4cf4c3741f4e39e3b3592"
 dependencies = [
  "aes",
  "base64 0.21.2",
@@ -1786,7 +1786,7 @@ dependencies = [
  "pbkdf2",
  "priority-queue",
  "protobuf",
- "quick-xml 0.29.0",
+ "quick-xml 0.28.2",
  "rand",
  "rsa",
  "serde",
@@ -1808,7 +1808,7 @@ dependencies = [
 [[package]]
 name = "librespot-metadata"
 version = "0.5.0-dev"
-source = "git+https://github.com/librespot-org/librespot?branch=dev#f037e46aee631837a0553ccfdbc7866752fd0f5d"
+source = "git+https://github.com/photovoltex/librespot?rev=a3471dd8d70b07c13eb4cf4c3741f4e39e3b3592#a3471dd8d70b07c13eb4cf4c3741f4e39e3b3592"
 dependencies = [
  "async-trait",
  "byteorder",
@@ -1826,7 +1826,7 @@ dependencies = [
 [[package]]
 name = "librespot-playback"
 version = "0.5.0-dev"
-source = "git+https://github.com/librespot-org/librespot?branch=dev#f037e46aee631837a0553ccfdbc7866752fd0f5d"
+source = "git+https://github.com/photovoltex/librespot?rev=a3471dd8d70b07c13eb4cf4c3741f4e39e3b3592#a3471dd8d70b07c13eb4cf4c3741f4e39e3b3592"
 dependencies = [
  "alsa",
  "byteorder",
@@ -1853,7 +1853,7 @@ dependencies = [
 [[package]]
 name = "librespot-protocol"
 version = "0.5.0-dev"
-source = "git+https://github.com/librespot-org/librespot?branch=dev#f037e46aee631837a0553ccfdbc7866752fd0f5d"
+source = "git+https://github.com/photovoltex/librespot?rev=a3471dd8d70b07c13eb4cf4c3741f4e39e3b3592#a3471dd8d70b07c13eb4cf4c3741f4e39e3b3592"
 dependencies = [
  "protobuf",
  "protobuf-codegen",
@@ -2787,9 +2787,9 @@ dependencies = [
 
 [[package]]
 name = "quick-xml"
-version = "0.29.0"
+version = "0.28.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "81b9228215d82c7b61490fec1de287136b5de6f5700f6e58ea9ad61a7964ca51"
+checksum = "0ce5e73202a820a31f8a0ee32ada5e21029c81fd9e3ebf668a40832e4219d9d1"
 dependencies = [
  "memchr",
  "serde",
