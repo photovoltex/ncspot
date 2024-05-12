@@ -1755,6 +1755,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "librespot-connect"
+version = "0.5.0-dev"
+source = "git+https://github.com/photovoltex/librespot?rev=a3471dd8d70b07c13eb4cf4c3741f4e39e3b3592#a3471dd8d70b07c13eb4cf4c3741f4e39e3b3592"
+dependencies = [
+ "form_urlencoded",
+ "futures-util",
+ "librespot-core",
+ "librespot-playback",
+ "librespot-protocol",
+ "log",
+ "protobuf",
+ "rand",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "tokio",
+ "tokio-stream",
+]
+
+[[package]]
 name = "librespot-core"
 version = "0.5.0-dev"
 source = "git+https://github.com/photovoltex/librespot?rev=a3471dd8d70b07c13eb4cf4c3741f4e39e3b3592#a3471dd8d70b07c13eb4cf4c3741f4e39e3b3592"
@@ -2024,6 +2044,7 @@ dependencies = [
  "ioctl-rs",
  "lazy_static",
  "libc",
+ "librespot-connect",
  "librespot-core",
  "librespot-playback",
  "librespot-protocol",

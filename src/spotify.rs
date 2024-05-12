@@ -10,7 +10,6 @@ use log::{debug, error, info};
 
 use librespot_playback::audio_backend;
 use librespot_playback::config::Bitrate;
-use librespot_playback::player::Player;
 
 use futures::channel::oneshot;
 use tokio::sync::mpsc;
@@ -27,9 +26,10 @@ use crate::config;
 use crate::events::{Event, EventManager};
 use crate::model::playable::Playable;
 use crate::spotify_api::WebApi;
+use crate::spotify_connect::Connect;
 use crate::spotify_worker::{Worker, WorkerCommand};
 
-pub const VOLUME_PERCENT: u16 = ((u16::max_value() as f64) * 1.0 / 100.0) as u16;
+pub const VOLUME_PERCENT: u16 = ((u16::MAX as f64) * 1.0 / 100.0) as u16;
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub enum PlayerEvent {
@@ -111,7 +111,7 @@ impl Spotify {
     }
 
     pub fn session_config() -> SessionConfig {
-        let mut session_config = librespot_core::SessionConfig {
+        let mut session_config = SessionConfig {
             client_id: config::CLIENT_ID.to_string(),
             ..Default::default()
         };
@@ -134,10 +134,7 @@ impl Spotify {
             .map(|_| session)
     }
 
-    async fn create_session(
-        cfg: &config::Config,
-        credentials: Credentials,
-    ) -> Result<Session, librespot_core::Error> {
+    fn create_session(cfg: &config::Config) -> Session {
         let librespot_cache_path = config::cache_path("librespot");
         let audio_cache_path = match cfg.values().audio_cache.unwrap_or(true) {
             true => Some(librespot_cache_path.join("files")),
@@ -149,13 +146,12 @@ impl Spotify {
             audio_cache_path,
             cfg.values()
                 .audio_cache_size
-                .map(|size| (size as u64 * 1048576)),
+                .map(|size| size as u64 * 1048576),
         )
         .expect("Could not create cache");
-        debug!("opening spotify session");
+
         let session_config = Self::session_config();
-        let session = Session::new(session_config, Some(cache));
-        session.connect(credentials, true).await.map(|_| session)
+        Session::new(session_config, Some(cache))
     }
 
     fn init_backend(desired_backend: Option<String>) -> Option<SinkBuilder> {
@@ -202,9 +198,7 @@ impl Spotify {
             ..Default::default()
         };
 
-        let session = Self::create_session(&cfg, credentials)
-            .await
-            .expect("Could not create session");
+        let session = Self::create_session(&cfg);
         user_tx.map(|tx| tx.send(session.username()));
 
         let create_mixer = librespot_playback::mixer::find(Some(SoftMixer::NAME))
@@ -215,23 +209,17 @@ impl Spotify {
         let backend_name = cfg.values().backend.clone();
         let backend =
             Self::init_backend(backend_name).expect("Could not find an audio playback backend");
-        let audio_format: librespot_playback::config::AudioFormat = Default::default();
-        let player = Player::new(
-            player_config,
-            session.clone(),
-            mixer.get_soft_volume(),
-            move || (backend)(cfg.values().backend_device.clone(), audio_format),
-        );
-        let player_events = player.get_player_event_channel();
-
-        let mut worker = Worker::new(
-            events.clone(),
-            player_events,
-            commands,
+        let device = cfg.values().backend_device.clone();
+        let connect = Connect::new(
+            credentials,
             session,
-            player,
-            mixer,
+            player_config,
+            create_mixer,
+            backend,
+            device,
         );
+        let mut worker = Worker::new(events.clone(), commands, connect);
+
         debug!("worker thread ready.");
         worker.run_loop().await;
 

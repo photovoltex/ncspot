@@ -17,13 +17,13 @@ use crate::queue::Queue;
 use crate::spotify::{PlayerEvent, Spotify};
 use crate::ui::create_cursive;
 use crate::{authentication, ui};
-use crate::{command, queue, spotify};
+use crate::command;
 
 #[cfg(feature = "mpris")]
-use crate::mpris::{self, MprisManager};
+use crate::mpris::MprisManager;
 
 #[cfg(unix)]
-use crate::ipc::{self, IpcSocket};
+use crate::ipc::IpcSocket;
 
 /// Set up the global logger to log to `filename`.
 pub fn setup_logging(filename: &Path) -> Result<(), fern::InitError> {
@@ -108,8 +108,7 @@ impl Application {
 
         let event_manager = EventManager::new(cursive.cb_sink().clone());
 
-        let spotify =
-            spotify::Spotify::new(event_manager.clone(), credentials, configuration.clone());
+        let spotify = Spotify::new(event_manager.clone(), credentials, configuration.clone());
 
         let library = Arc::new(Library::new(
             event_manager.clone(),
@@ -117,14 +116,14 @@ impl Application {
             configuration.clone(),
         ));
 
-        let queue = Arc::new(queue::Queue::new(
+        let queue = Arc::new(Queue::new(
             spotify.clone(),
             configuration.clone(),
             library.clone(),
         ));
 
         #[cfg(feature = "mpris")]
-        let mpris_manager = mpris::MprisManager::new(
+        let mpris_manager = MprisManager::new(
             event_manager.clone(),
             queue.clone(),
             library.clone(),
@@ -132,7 +131,7 @@ impl Application {
         );
 
         #[cfg(unix)]
-        let ipc = ipc::IpcSocket::new(
+        let ipc = IpcSocket::new(
             ASYNC_RUNTIME.handle(),
             crate::config::cache_path("ncspot.sock"),
             event_manager.clone(),
