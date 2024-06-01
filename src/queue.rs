@@ -45,12 +45,7 @@ impl Queue {
         let queue_state = cfg.state().queuestate.clone();
         let playback_state = cfg.state().playback_state.clone();
 
-        let tracks: Vec<TrackRef> = queue_state
-            .queue
-            .iter()
-            .map(Playable::as_trackref)
-            .collect();
-
+        let tracks: Vec<TrackRef> = Queue::list_as_tracks(&queue_state.queue); 
         let queue = Queue {
             queue: Arc::new(RwLock::new(queue_state.queue)),
             context: queue_state.context.clone(),
@@ -75,13 +70,8 @@ impl Queue {
         queue
     }
 
-    fn queue_as_tracks(&self) -> Vec<TrackRef> {
-        self.queue
-            .read()
-            .unwrap()
-            .iter()
-            .map(Playable::as_trackref)
-            .collect()
+    fn list_as_tracks(list: &Vec<Playable>) -> Vec<TrackRef> {
+        list.iter().map(Playable::as_trackref).collect()
     }
 
     /// The index of the next item in `self.queue` that should be played. None
@@ -243,10 +233,13 @@ impl Queue {
     /// `shuffle`: Reshuffle the current order of the queue.
     /// chosen at random as a valid index in the queue.
     pub fn play(&self, index: usize, shuffle: bool) {
-        if let Some(track) = &self.queue.read().unwrap().get(index) {
-            let tracks = self.queue_as_tracks();
+        let queue = self.queue.read().unwrap();
+        if let Some(track) = &queue.get(index) {
+            let tracks = Queue::list_as_tracks(&queue);
             let repeat = !matches!(self.get_repeat(), RepeatSetting::None);
+
             self.spotify.load(self.context.clone(), tracks, index, true, 0, shuffle, repeat);
+            self.set_shuffle(shuffle);
             
             let mut current = self.current_track.write().unwrap();
             current.replace(index);
@@ -305,8 +298,11 @@ impl Queue {
     /// used, and the next track will actually be played. This should be used
     /// when going to the next entry in the queue is the wanted behavior.
     pub fn next(&self, manual: bool) {
+        self.spotify.api.next(None);
+        
         let q = self.queue.read().unwrap();
         let current = *self.current_track.read().unwrap();
+
         let repeat = self.get_repeat();
 
         if repeat == RepeatSetting::RepeatTrack && !manual {
@@ -351,6 +347,10 @@ impl Queue {
 
     /// Set the current repeat behavior and save it to the configuration.
     pub fn set_repeat(&self, new: RepeatSetting) {
+        if new == self.get_repeat() {
+            return
+        }
+
         self.spotify.api.set_repeat(new, None);
         self.cfg.with_state_mut(|mut s| s.repeat = new);
     }
@@ -362,6 +362,10 @@ impl Queue {
 
     /// Set the current shuffle behavior.
     pub fn set_shuffle(&self, new: bool) {
+        if new == self.get_shuffle() {
+            return
+        }
+        
         self.spotify.api.set_shuffle(new, None);
         self.cfg.with_state_mut(|mut s| s.shuffle = new);
     }

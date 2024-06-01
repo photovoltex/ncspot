@@ -676,4 +676,20 @@ impl WebApi {
             api.add_item_to_queue(playable_id.unwrap(), device) 
         });
     }
+
+    pub fn next(&self, device: Option<&str>) {
+        _ = self.api_with_retry(|api| api.next_track(device));
+    }
+
+    pub fn previous(&self, device: Option<&str>) {
+        _ = self.api_with_retry(|api| api.previous_track(device));
+    }
+
+    pub fn pause(&self, device: Option<&str>) {
+        _ = self.api_with_retry(|api| api.pause_playback(device));
+    }
+
+    pub fn resume(&self, duration: Option<ChronoDuration>,  device: Option<&str>) {
+        _ = self.api_with_retry(|api| api.resume_playback(device, duration));
+    }
 }

@@ -4,7 +4,7 @@ use std::{pin::Pin, time::SystemTime};
 use futures::channel::oneshot;
 use futures::Future;
 use futures::FutureExt;
-use librespot_connect::spirc::SpircLoadCommand;
+use librespot_connect::spirc::{SpircEvent, SpircLoadCommand};
 use librespot_core::session::Session;
 use librespot_core::token::Token;
 use librespot_playback::player::PlayerEvent as LibrespotPlayerEvent;
@@ -85,7 +85,7 @@ impl Worker {
             spirc,
             mut player_events,
             // todo: use spirc_events and handle external changes
-            spirc_events: _,
+            mut spirc_events,
         } = handle;
 
         debug!("created handle successfully");
@@ -196,6 +196,14 @@ impl Worker {
                         break
                     },
                     unused_player_event => warn!("unused player event: {unused_player_event:?}")
+                },
+                event = spirc_events.recv() => match event { 
+                    Some(SpircEvent::Playback(_)) => info!("new playback_state"),
+                    Some(SpircEvent::Device(_)) => info!("new device_state"),
+                    None => {
+                        warn!("Librespot spirc event channel died, terminating worker");
+                        break
+                    }
                 },
                 // todo: maybe handle reconnecting
                 _ = spirc_task.as_mut() => {
