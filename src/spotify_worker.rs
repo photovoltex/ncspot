@@ -1,6 +1,6 @@
-use crate::events::{Event, EventManager};
-use crate::spotify::PlayerEvent;
-use crate::spotify_connect::{Connect, SpircHandle};
+use std::time::Duration;
+use std::{pin::Pin, time::SystemTime};
+
 use futures::channel::oneshot;
 use futures::Future;
 use futures::FutureExt;
@@ -9,12 +9,14 @@ use librespot_core::session::Session;
 use librespot_core::token::Token;
 use librespot_playback::player::PlayerEvent as LibrespotPlayerEvent;
 use log::{debug, error, info, warn};
-use std::time::Duration;
-use std::{pin::Pin, time::SystemTime};
 use tokio::sync::mpsc;
 use tokio::time;
 use tokio_stream::wrappers::UnboundedReceiverStream;
 use tokio_stream::StreamExt;
+
+use crate::events::{Event, EventManager};
+use crate::spotify::PlayerEvent;
+use crate::spotify_connect::{Connect, SpircHandle};
 
 #[derive(Debug)]
 pub(crate) enum WorkerCommand {
@@ -133,8 +135,15 @@ impl Worker {
                         spirc.pause().unwrap();
                     }
                     Some(WorkerCommand::Stop) => {
-                        // todo: fix unused
-                        error!("there isn't a equivalent option for it")
+                        // todo: fix .unwrap()
+                        spirc.load(SpircLoadCommand {
+                            context_uri: "".to_string(),
+                            start_playing: false,
+                            shuffle: false,
+                            repeat: false,
+                            playing_track_index: 0,
+                            tracks: vec![],
+                        }).unwrap()
                     }
                     Some(WorkerCommand::Seek(pos)) => {
                         // todo: fix .unwrap()

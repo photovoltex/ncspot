@@ -144,7 +144,7 @@ pub struct SortingOrder {
 #[derive(Serialize, Default, Deserialize, Debug, Clone)]
 pub struct QueueState {
     pub current_track: Option<usize>,
-    pub context: PlayableContext,
+    pub context: String,
     pub track_progress: std::time::Duration,
     pub queue: Vec<Playable>,
 }
@@ -163,7 +163,7 @@ impl PlayableContext {
         match self {
             PlayableContext::Artist(uri)
             | PlayableContext::Album(uri)
-            | PlayableContext::Playlist(uri) => uri,
+            | PlayableContext::Playlist(uri) => uri.clone(),
             PlayableContext::Collection => format!("{user}:collection"),
         }
     }

@@ -143,6 +143,15 @@ impl Playable {
             Playable::Episode(episode) => episode.as_listitem(),
         }
     }
+
+    pub fn as_trackref(&self) -> TrackRef {
+        TrackRef {
+            uri: Some(self.uri()),
+            queued: Some(self.is_queued()),
+            context: Some(self.context()),
+            ..Default::default()
+        }
+    }
 }
 
 impl From<&PlayableItem> for Playable {
@@ -165,17 +174,6 @@ impl From<&Playable> for Option<rspotify::prelude::PlayableId<'_>> {
             Playable::Episode(e) => rspotify::model::EpisodeId::from_id(e.id.clone())
                 .map(rspotify::prelude::PlayableId::Episode)
                 .ok(),
-        }
-    }
-}
-
-impl Into<TrackRef> for Playable {
-    fn into(self) -> TrackRef {
-        TrackRef {
-            uri: Some(self.uri()),
-            queued: Some(self.is_queued()),
-            context: Some(self.context()),
-            ..Default::default()
         }
     }
 }
