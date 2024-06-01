@@ -225,7 +225,7 @@ impl ListItem for Playlist {
 
         if let Some(tracks) = &self.tracks {
             let index = queue.append_next(tracks);
-            queue.play(index, true, true);
+            queue.play(index, true);
         }
     }
 

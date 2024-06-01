@@ -396,7 +396,7 @@ impl MprisPlayer {
                                 .map(|track| Playable::Track(track.clone()))
                                 .collect(),
                         );
-                        self.queue.play(index, should_shuffle, should_shuffle)
+                        self.queue.play(index, should_shuffle)
                     }
                 }
             }
@@ -404,7 +404,7 @@ impl MprisPlayer {
                 if let Some(t) = self.spotify.api.track(&id) {
                     self.queue.clear();
                     self.queue.append(Playable::Track(Track::from(&t)));
-                    self.queue.play(0, false, false)
+                    self.queue.play(0, false)
                 }
             }
             Some(UriType::Playlist) => {
@@ -416,7 +416,7 @@ impl MprisPlayer {
                         let should_shuffle = self.queue.get_shuffle();
                         self.queue.clear();
                         let index = self.queue.append_next(tracks);
-                        self.queue.play(index, should_shuffle, should_shuffle)
+                        self.queue.play(index, should_shuffle)
                     }
                 }
             }
@@ -435,7 +435,7 @@ impl MprisPlayer {
                                 .map(|episode| Playable::Episode(episode.clone()))
                                 .collect(),
                         );
-                        self.queue.play(index, should_shuffle, should_shuffle)
+                        self.queue.play(index, should_shuffle)
                     }
                 }
             }
@@ -443,7 +443,7 @@ impl MprisPlayer {
                 if let Some(e) = self.spotify.api.episode(&id) {
                     self.queue.clear();
                     self.queue.append(Playable::Episode(Episode::from(&e)));
-                    self.queue.play(0, false, false)
+                    self.queue.play(0, false)
                 }
             }
             Some(UriType::Artist) => {
@@ -455,7 +455,7 @@ impl MprisPlayer {
                             .map(|track| Playable::Track(track.clone()))
                             .collect(),
                     );
-                    self.queue.play(index, should_shuffle, should_shuffle)
+                    self.queue.play(index, should_shuffle)
                 }
             }
             None => {}

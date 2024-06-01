@@ -173,7 +173,7 @@ impl<I: ListItem + Clone> ListView<I> {
         });
         if let Some(tracks) = playables.or(tracks.as_ref()) {
             let index = self.queue.append_next(tracks);
-            self.queue.play(index + self.selected, true, false);
+            self.queue.play(index + self.selected, true);
             true
         } else {
             false

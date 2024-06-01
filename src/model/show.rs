@@ -105,7 +105,7 @@ impl ListItem for Show {
             .collect();
 
         let index = queue.append_next(&playables);
-        queue.play(index, true, true);
+        queue.play(index, true);
     }
 
     fn play_next(&mut self, queue: &Queue) {

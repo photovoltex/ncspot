@@ -195,7 +195,7 @@ impl ListItem for Album {
                 .map(|track| Playable::Track(track.clone()))
                 .collect();
             let index = queue.append_next(&tracks);
-            queue.play(index, true, true);
+            queue.play(index, true);
         }
     }
 

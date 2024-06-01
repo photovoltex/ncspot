@@ -13,12 +13,7 @@ use futures::channel::oneshot;
 use log::{debug, error, info};
 
 use rspotify::http::HttpError;
-use rspotify::model::{
-    AlbumId, AlbumType, ArtistId, CursorBasedPage, EpisodeId, FullAlbum, FullArtist, FullEpisode,
-    FullPlaylist, FullShow, FullTrack, ItemPositions, Market, Page, PlayableId, PlaylistId,
-    PrivateUser, Recommendations, SavedAlbum, SavedTrack, SearchResult, SearchType, Show, ShowId,
-    SimplifiedTrack, TrackId, UserId,
-};
+use rspotify::model::{AlbumId, AlbumType, ArtistId, CursorBasedPage, EpisodeId, FullAlbum, FullArtist, FullEpisode, FullPlaylist, FullShow, FullTrack, ItemPositions, Market, ModelError, Page, PlayableId, PlaylistId, PrivateUser, Recommendations, RepeatState, SavedAlbum, SavedTrack, SearchResult, SearchType, Show, ShowId, SimplifiedTrack, TrackId, UserId};
 use rspotify::{prelude::*, AuthCodeSpotify, ClientError, ClientResult, Token};
 use std::collections::HashSet;
 use std::iter::FromIterator;
@@ -26,6 +21,7 @@ use std::sync::{Arc, RwLock};
 use std::thread;
 use std::time::Duration;
 use tokio::sync::mpsc;
+use crate::queue::RepeatSetting;
 
 #[derive(Clone)]
 pub struct WebApi {
@@ -659,5 +655,25 @@ impl WebApi {
 
     pub fn current_user(&self) -> Option<PrivateUser> {
         self.api_with_retry(|api| api.current_user())
+    }
+    
+    pub fn set_shuffle(&self, shuffle: bool, device: Option<&str>) {
+        _ = self.api_with_retry(|api| api.shuffle(shuffle, device));
+    }
+
+    pub fn set_repeat(&self, repeat: RepeatSetting, device: Option<&str>) {
+        let repeat = match repeat {
+            RepeatSetting::None => RepeatState::Off,
+            RepeatSetting::RepeatPlaylist => RepeatState::Context,
+            RepeatSetting::RepeatTrack => RepeatState::Track
+        };
+        _ = self.api_with_retry(|api| api.repeat(repeat, device));
+    }
+    
+    pub fn queue(&self, item: &Playable, device: Option<&str>) {
+        _ = self.api_with_retry(|api| {
+            let playable_id: Option<PlayableId> = item.into();
+            api.add_item_to_queue(playable_id.unwrap(), device) 
+        });
     }
 }

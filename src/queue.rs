@@ -5,7 +5,6 @@ use librespot_protocol::spirc::TrackRef;
 use log::info;
 #[cfg(feature = "notify")]
 use notify_rust::Notification;
-use rand::prelude::*;
 use strum_macros::Display;
 
 use crate::config::{Config, PlaybackState};
@@ -90,7 +89,7 @@ impl Queue {
     pub fn next_index(&self) -> Option<usize> {
         let index = (*self.current_track.read().ok()?)?;
 
-        let mut next_index = index + 1;
+        let next_index = index + 1;
         if next_index < self.queue.read().ok()?.len() {
             Some(next_index)
         } else {
@@ -138,6 +137,8 @@ impl Queue {
 
     /// Add `track` to the end of the queue.
     pub fn append(&self, track: Playable) {
+        self.spotify.api.queue(&track, None);
+
         let mut q = self.queue.write().unwrap();
         q.push(track);
     }
@@ -192,7 +193,7 @@ impl Queue {
                             self.next(false);
                         }
                     } else {
-                        self.play(index, false, false);
+                        self.play(index, false);
                     }
                 }
                 Ordering::Greater => {
@@ -210,11 +211,6 @@ impl Queue {
 
         let mut q = self.queue.write().unwrap();
         q.clear();
-
-        let mut random_order = self.random_order.write().unwrap();
-        if let Some(o) = random_order.as_mut() {
-            o.clear()
-        }
     }
 
     /// The amount of items in `self.queue`.
@@ -244,19 +240,14 @@ impl Queue {
 
     /// Play the item at `index` in `self.queue`.
     ///
-    /// `reshuffle`: Reshuffle the current order of the queue.
-    /// `shuffle_index`: If this is true, `index` isn't actually used, but is
+    /// `shuffle`: Reshuffle the current order of the queue.
     /// chosen at random as a valid index in the queue.
-    pub fn play(&self, mut index: usize, reshuffle: bool, shuffle_index: bool) {
-        let queue_length = self.queue.read().unwrap().len();
-        // The length of the queue must be bigger than 0 or gen_range panics!
-        if queue_length > 0 && shuffle_index && self.get_shuffle() {
-            let mut rng = rand::thread_rng();
-            index = rng.gen_range(0..queue_length);
-        }
-
+    pub fn play(&self, index: usize, shuffle: bool) {
         if let Some(track) = &self.queue.read().unwrap().get(index) {
-            self.spotify.load(track, true, 0);
+            let tracks = self.queue_as_tracks();
+            let repeat = !matches!(self.get_repeat(), RepeatSetting::None);
+            self.spotify.load(self.context.clone(), tracks, index, true, 0, shuffle, repeat);
+            
             let mut current = self.current_track.write().unwrap();
             current.replace(index);
             self.spotify.update_track();
@@ -284,10 +275,6 @@ impl Queue {
                 });
             }
         }
-
-        if reshuffle && self.get_shuffle() {
-            self.generate_random_order()
-        }
     }
 
     /// Toggle the playback. If playback is currently stopped, this will either
@@ -299,7 +286,7 @@ impl Queue {
             }
             PlayerEvent::Stopped => match self.next_index() {
                 Some(_) => self.next(false),
-                None => self.play(0, false, false),
+                None => self.play(0, false),
             },
             _ => (),
         }
@@ -320,24 +307,19 @@ impl Queue {
     pub fn next(&self, manual: bool) {
         let q = self.queue.read().unwrap();
         let current = *self.current_track.read().unwrap();
-        let repeat = self.cfg.state().repeat;
+        let repeat = self.get_repeat();
 
         if repeat == RepeatSetting::RepeatTrack && !manual {
             if let Some(index) = current {
-                self.play(index, false, false);
+                self.play(index, false);
             }
         } else if let Some(index) = self.next_index() {
-            self.play(index, false, false);
+            self.play(index, false);
             if repeat == RepeatSetting::RepeatTrack && manual {
                 self.set_repeat(RepeatSetting::RepeatPlaylist);
             }
         } else if repeat == RepeatSetting::RepeatPlaylist && q.len() > 0 {
-            let random_order = self.random_order.read().unwrap();
-            self.play(
-                random_order.as_ref().map(|o| o[0]).unwrap_or(0),
-                false,
-                false,
-            );
+            self.play(0, false);
         } else {
             self.spotify.stop();
         }
@@ -347,23 +329,18 @@ impl Queue {
     pub fn previous(&self) {
         let q = self.queue.read().unwrap();
         let current = *self.current_track.read().unwrap();
-        let repeat = self.cfg.state().repeat;
+        let repeat = self.get_repeat();
 
         if let Some(index) = self.previous_index() {
-            self.play(index, false, false);
+            self.play(index, false);
         } else if repeat == RepeatSetting::RepeatPlaylist && q.len() > 0 {
             if self.get_shuffle() {
-                let random_order = self.random_order.read().unwrap();
-                self.play(
-                    random_order.as_ref().map(|o| o[q.len() - 1]).unwrap_or(0),
-                    false,
-                    false,
-                );
+                self.play(0, false);
             } else {
-                self.play(q.len() - 1, false, false);
+                self.play(q.len() - 1, false);
             }
         } else if let Some(index) = current {
-            self.play(index, false, false);
+            self.play(index, false);
         }
     }
 
@@ -374,6 +351,7 @@ impl Queue {
 
     /// Set the current repeat behavior and save it to the configuration.
     pub fn set_repeat(&self, new: RepeatSetting) {
+        self.spotify.api.set_repeat(new, None);
         self.cfg.with_state_mut(|mut s| s.repeat = new);
     }
 
@@ -382,20 +360,10 @@ impl Queue {
         self.cfg.state().shuffle
     }
 
-    /// Get the current order that is used to shuffle.
-    pub fn get_random_order(&self) -> Option<Vec<usize>> {
-        self.random_order.read().unwrap().clone()
-    }
-
     /// Set the current shuffle behavior.
     pub fn set_shuffle(&self, new: bool) {
+        self.spotify.api.set_shuffle(new, None);
         self.cfg.with_state_mut(|mut s| s.shuffle = new);
-        if new {
-            self.generate_random_order();
-        } else {
-            let mut random_order = self.random_order.write().unwrap();
-            *random_order = None;
-        }
     }
 
     /// Get the spotify session.
