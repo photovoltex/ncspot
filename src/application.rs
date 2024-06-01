@@ -8,6 +8,7 @@ use log::{error, info, trace};
 #[cfg(unix)]
 use signal_hook::{consts::SIGHUP, consts::SIGTERM, iterator::Signals};
 
+use crate::command;
 use crate::command::Command;
 use crate::commands::CommandManager;
 use crate::config::Config;
@@ -17,7 +18,6 @@ use crate::queue::Queue;
 use crate::spotify::{PlayerEvent, Spotify};
 use crate::ui::create_cursive;
 use crate::{authentication, ui};
-use crate::command;
 
 #[cfg(feature = "mpris")]
 use crate::mpris::MprisManager;
@@ -232,9 +232,6 @@ impl Application {
                         if state == PlayerEvent::FinishedTrack {
                             self.queue.next(false);
                         }
-                    }
-                    Event::Queue(event) => {
-                        self.queue.handle_event(event);
                     }
                     Event::SessionDied => self.spotify.start_worker(None),
                     Event::IpcInput(input) => match command::parse(&input) {

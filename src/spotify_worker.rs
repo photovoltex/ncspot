@@ -1,6 +1,4 @@
 use crate::events::{Event, EventManager};
-use crate::model::playable::Playable;
-use crate::queue::QueueEvent;
 use crate::spotify::PlayerEvent;
 use crate::spotify_connect::{Connect, SpircHandle};
 use futures::channel::oneshot;
@@ -8,7 +6,6 @@ use futures::Future;
 use futures::FutureExt;
 use librespot_connect::spirc::SpircLoadCommand;
 use librespot_core::session::Session;
-use librespot_core::spotify_id::SpotifyId;
 use librespot_core::token::Token;
 use librespot_playback::player::PlayerEvent as LibrespotPlayerEvent;
 use log::{debug, error, info, warn};
@@ -21,14 +18,13 @@ use tokio_stream::StreamExt;
 
 #[derive(Debug)]
 pub(crate) enum WorkerCommand {
-    Load(Playable, bool, u32),
+    Load(SpircLoadCommand, u32),
     Play,
     Pause,
     Stop,
     Seek(u32),
     SetVolume(u16),
     RequestToken(oneshot::Sender<Option<Token>>),
-    Preload(Playable),
     Shutdown,
 }
 
@@ -73,10 +69,10 @@ impl Worker {
     }
 
     pub async fn run_loop(&mut self) {
-        // todo: fix .unwrap()
         debug!("run loop");
-        let (handle, mut spirc_task) = match self.connect.create_new_handle(true, None).await {
-            Ok((handle, spirc_task)) => (handle, spirc_task),
+        let handle_tuple = self.connect.create_new_handle(true, None).await;
+        let (handle, mut spirc_task) = match handle_tuple {
+            Ok(inner) => inner,
             Err(why) => {
                 error!("Creating connection failed: {why}");
                 return;
@@ -105,36 +101,28 @@ impl Worker {
 
             tokio::select! {
                 cmd = self.commands.next() => match cmd {
-                    Some(WorkerCommand::Load(playable, start_playing, position_ms)) => {
-                        match SpotifyId::from_uri(&playable.uri()) {
-                            Ok(id) => {
-                                info!("player loading track: {:?}", id);
-                                if !id.is_playable() {
-                                    warn!("track is not playable");
-                                    self.events.send(Event::Player(PlayerEvent::FinishedTrack));
-                                } else {
-                                    debug!("trying to load {playable}");
+                    Some(WorkerCommand::Load(cmd, position_ms)) => {
+                        // match SpotifyId::from_uri(&playable.uri()) {
+                        //     Ok(id) => {
+                        //         info!("player loading track: {:?}", id);
+                        //         if !id.is_playable() {
+                        //             warn!("track is not playable");
+                        //             self.events.send(Event::Player(PlayerEvent::FinishedTrack));
+                        //         } else {
+                        //             debug!("trying to load {playable}");
 
                                     // todo: adjust WorkerCommand::Load to provide enough context
-                                    let load = SpircLoadCommand {
-                                        context_uri: "".to_string(),
-                                        start_playing,
-                                        shuffle: false,
-                                        repeat: false,
-                                        playing_track_index: 0,
-                                        tracks: vec![],
-                                    };
-
                                     // todo: fix .unwrap()
-                                    spirc.load(load).unwrap();
+
+                                    spirc.load(cmd).unwrap();
                                     spirc.set_position_ms(position_ms).unwrap()
-                                }
-                            }
-                            Err(e) => {
-                                error!("error parsing uri: {:?}", e);
-                                self.events.send(Event::Player(PlayerEvent::FinishedTrack));
-                            }
-                        }
+                            //     }
+                            // }
+                            // Err(e) => {
+                            //     error!("error parsing uri: {:?}", e);
+                            //     self.events.send(Event::Player(PlayerEvent::FinishedTrack));
+                            // }
+                        // }
                     }
                     Some(WorkerCommand::Play) => {
                         // todo: fix .unwrap()
@@ -158,10 +146,6 @@ impl Worker {
                     }
                     Some(WorkerCommand::RequestToken(sender)) => {
                         self.token_task = Box::pin(Self::get_token(self.connect.session.clone(), sender));
-                    }
-                    Some(WorkerCommand::Preload(track)) => {
-                        // todo: probably remove this command later
-                        error!("preload: handled by spirc if required: {track}")
                     }
                     Some(WorkerCommand::Shutdown) => {
                         // todo: fix unused
@@ -197,10 +181,6 @@ impl Worker {
                     }
                     Some(LibrespotPlayerEvent::EndOfTrack { .. }) => {
                         self.events.send(Event::Player(PlayerEvent::FinishedTrack));
-                    }
-                    Some(LibrespotPlayerEvent::TimeToPreloadNextTrack { .. }) => {
-                        self.events
-                            .send(Event::Queue(QueueEvent::PreloadTrackRequest));
                     }
                     None => {
                         warn!("Librespot player event channel died, terminating worker");

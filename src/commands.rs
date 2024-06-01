@@ -120,7 +120,7 @@ impl CommandManager {
                         self.queue.get_current_index()
                     );
                     s.queuestate.queue = queue.clone();
-                    s.queuestate.random_order = self.queue.get_random_order();
+                    s.queuestate.context = self.queue.get_context();
                     s.queuestate.current_track = self.queue.get_current_index();
                     s.queuestate.track_progress = self.spotify.get_current_progress();
                 });

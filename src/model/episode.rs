@@ -13,6 +13,8 @@ use std::sync::Arc;
 pub struct Episode {
     pub id: String,
     pub uri: String,
+    pub queued: bool,
+    pub context: String,
     pub duration: u32,
     pub name: String,
     pub description: String,

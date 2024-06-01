@@ -1,14 +1,14 @@
 use std::cmp::Ordering;
 use std::sync::{Arc, RwLock};
 
-use log::{debug, info};
+use librespot_protocol::spirc::TrackRef;
+use log::info;
 #[cfg(feature = "notify")]
 use notify_rust::Notification;
-
 use rand::prelude::*;
 use strum_macros::Display;
 
-use crate::config::{Config, PlaybackState};
+use crate::config::{Config, PlayableContext, PlaybackState};
 use crate::library::Library;
 use crate::model::playable::Playable;
 use crate::spotify::PlayerEvent;
@@ -25,23 +25,16 @@ pub enum RepeatSetting {
     RepeatTrack,
 }
 
-/// Events that are specific to the [Queue].
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum QueueEvent {
-    /// Request the player to 'preload' a track, basically making sure that
-    /// transitions between tracks can be uninterrupted.
-    PreloadTrackRequest,
-}
-
 /// The queue determines the playback order of
-/// [Playable](crate::model::playable::Playable) items, and is also used to
+/// [Playable] items, and is also used to
 /// control playback itself.
 pub struct Queue {
     /// The internal data, which doesn't change with shuffle or repeat. This is
     /// the raw data only.
     pub queue: Arc<RwLock<Vec<Playable>>>,
-    /// The playback order of the queue, as indices into `self.queue`.
-    random_order: RwLock<Option<Vec<usize>>>,
+    // /// The playback order of the queue, as indices into `self.queue`.
+    // random_order: RwLock<Option<Vec<usize>>>,
+    context: PlayableContext,
     current_track: RwLock<Option<usize>>,
     spotify: Spotify,
     cfg: Arc<Config>,
@@ -52,30 +45,32 @@ impl Queue {
     pub fn new(spotify: Spotify, cfg: Arc<Config>, library: Arc<Library>) -> Queue {
         let queue_state = cfg.state().queuestate.clone();
         let playback_state = cfg.state().playback_state.clone();
+
+        let tracks: Vec<TrackRef> = queue_state.queue
+            .iter()
+            .cloned()
+            .map(Into::into)
+            .collect();
+
         let queue = Queue {
             queue: Arc::new(RwLock::new(queue_state.queue)),
+            context: queue_state.context.clone(),
             spotify: spotify.clone(),
             current_track: RwLock::new(queue_state.current_track),
-            random_order: RwLock::new(queue_state.random_order),
             cfg,
             library,
         };
 
-        if let Some(playable) = queue.get_current() {
+        if let Some(index) = queue.get_current_index() {
             spotify.load(
-                &playable,
+                queue.get_context(),
+                tracks,
+                index,
                 playback_state == PlaybackState::Playing,
                 queue_state.track_progress.as_millis() as u32,
+                queue.get_shuffle(),
+                !matches!(queue.get_repeat(), RepeatSetting::None),
             );
-            spotify.update_track();
-            match playback_state {
-                PlaybackState::Stopped => {
-                    spotify.stop();
-                }
-                PlaybackState::Paused | PlaybackState::Playing | PlaybackState::Default => {
-                    spotify.pause();
-                }
-            }
         }
 
         queue
@@ -90,13 +85,13 @@ impl Queue {
                 if let Some(order) = random_order.as_ref() {
                     index = order.iter().position(|&i| i == index).unwrap();
                 }
-
+    
                 let mut next_index = index + 1;
                 if next_index < self.queue.read().unwrap().len() {
                     if let Some(order) = random_order.as_ref() {
                         next_index = order[next_index];
                     }
-
+    
                     Some(next_index)
                 } else {
                     None
@@ -129,6 +124,11 @@ impl Queue {
             }
             None => None,
         }
+    }
+
+    pub fn get_context(&self) -> String {
+        let username = self.spotify.user.as_ref().unwrap();
+        self.context.uri(username)
     }
 
     /// The currently playing item from `self.queue`.
@@ -448,7 +448,7 @@ impl Queue {
             random.remove(current);
         }
 
-        let mut rng = rand::thread_rng();
+        let mut rng = thread_rng();
         random.shuffle(&mut rng);
         order.extend(random);
 
@@ -464,19 +464,6 @@ impl Queue {
         } else {
             let mut random_order = self.random_order.write().unwrap();
             *random_order = None;
-        }
-    }
-
-    /// Handle events that are specific to the queue.
-    pub fn handle_event(&self, event: QueueEvent) {
-        match event {
-            QueueEvent::PreloadTrackRequest => {
-                if let Some(next_index) = self.next_index() {
-                    let track = self.queue.read().unwrap()[next_index].clone();
-                    debug!("Preloading track {} as requested by librespot", track);
-                    self.spotify.preload(&track);
-                }
-            }
         }
     }
 

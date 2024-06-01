@@ -144,9 +144,29 @@ pub struct SortingOrder {
 #[derive(Serialize, Default, Deserialize, Debug, Clone)]
 pub struct QueueState {
     pub current_track: Option<usize>,
-    pub random_order: Option<Vec<usize>>,
+    pub context: PlayableContext,
     pub track_progress: std::time::Duration,
     pub queue: Vec<Playable>,
+}
+
+#[derive(Serialize, Default, Deserialize, Debug, Clone)]
+pub enum PlayableContext {
+    Artist(String),
+    Album(String),
+    Playlist(String),
+    #[default]
+    Collection,
+}
+
+impl PlayableContext {
+    pub fn uri(&self, user: &str) -> String {
+        match self {
+            PlayableContext::Artist(uri)
+            | PlayableContext::Album(uri)
+            | PlayableContext::Playlist(uri) => uri,
+            PlayableContext::Collection => format!("{user}:collection"),
+        }
+    }
 }
 
 /// Runtime state that should be persisted accross sessions.

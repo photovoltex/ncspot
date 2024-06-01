@@ -16,6 +16,8 @@ use tokio::sync::mpsc;
 
 use url::Url;
 
+use librespot_connect::spirc::SpircLoadCommand;
+use librespot_protocol::spirc::TrackRef;
 use std::env;
 use std::str::FromStr;
 use std::sync::{Arc, RwLock};
@@ -24,7 +26,6 @@ use std::time::{Duration, SystemTime};
 use crate::application::ASYNC_RUNTIME;
 use crate::config;
 use crate::events::{Event, EventManager};
-use crate::model::playable::Playable;
 use crate::spotify_api::WebApi;
 use crate::spotify_connect::Connect;
 use crate::spotify_worker::{Worker, WorkerCommand};
@@ -51,7 +52,7 @@ pub struct Spotify {
     elapsed: Arc<RwLock<Option<Duration>>>,
     since: Arc<RwLock<Option<SystemTime>>>,
     channel: Arc<RwLock<Option<mpsc::UnboundedSender<WorkerCommand>>>>,
-    user: Option<String>,
+    pub user: Option<String>,
 }
 
 impl Spotify {
@@ -278,13 +279,27 @@ impl Spotify {
         *since
     }
 
-    pub fn load(&self, track: &Playable, start_playing: bool, position_ms: u32) {
-        info!("loading track: {:?}", track);
-        self.send_worker(WorkerCommand::Load(
-            track.clone(),
+    pub fn load(
+        &self,
+        context_uri: String,
+        tracks: Vec<TrackRef>,
+        current_index: usize,
+        start_playing: bool,
+        position_ms: u32,
+        shuffle: bool,
+        repeat: bool,
+    ) {
+        info!("loading track: {:?}", tracks.get(current_index));
+        let cmd = SpircLoadCommand {
+            context_uri,
             start_playing,
-            position_ms,
-        ));
+            shuffle,
+            repeat,
+            playing_track_index: current_index as u32,
+            tracks,
+        };
+
+        self.send_worker(WorkerCommand::Load(cmd, position_ms));
     }
 
     pub fn update_status(&self, new_status: PlayerEvent) {
@@ -364,10 +379,6 @@ impl Spotify {
         info!("setting volume to {}", volume);
         self.cfg.with_state_mut(|mut s| s.volume = volume);
         self.send_worker(WorkerCommand::SetVolume(volume));
-    }
-
-    pub fn preload(&self, track: &Playable) {
-        self.send_worker(WorkerCommand::Preload(track.clone()));
     }
 
     pub fn shutdown(&self) {

@@ -20,6 +20,8 @@ use crate::ui::listview::ListView;
 pub struct Track {
     pub id: Option<String>,
     pub uri: String,
+    pub queued: bool,
+    pub context: String,
     pub title: String,
     pub track_number: u32,
     pub disc_number: i32,

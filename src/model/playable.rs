@@ -9,6 +9,7 @@ use crate::model::track::Track;
 use crate::queue::Queue;
 use crate::traits::{ListItem, ViewExt};
 use crate::utils::ms_to_hms;
+use librespot_protocol::spirc::TrackRef;
 use std::fmt;
 use std::sync::Arc;
 
@@ -83,6 +84,20 @@ impl Playable {
         }
     }
 
+    pub fn is_queued(&self) -> bool {
+        match self {
+            Playable::Track(track) => track.queued,
+            Playable::Episode(episode) => episode.queued,
+        }
+    }
+
+    pub fn context(&self) -> String {
+        match self {
+            Playable::Track(track) => track.context.clone(),
+            Playable::Episode(episode) => episode.context.clone(),
+        }
+    }
+
     pub fn cover_url(&self) -> Option<String> {
         match self {
             Playable::Track(track) => track.cover_url.clone(),
@@ -150,6 +165,17 @@ impl From<&Playable> for Option<rspotify::prelude::PlayableId<'_>> {
             Playable::Episode(e) => rspotify::model::EpisodeId::from_id(e.id.clone())
                 .map(rspotify::prelude::PlayableId::Episode)
                 .ok(),
+        }
+    }
+}
+
+impl Into<TrackRef> for Playable {
+    fn into(self) -> TrackRef {
+        TrackRef {
+            uri: Some(self.uri()),
+            queued: Some(self.is_queued()),
+            context: Some(self.context()),
+            ..Default::default()
         }
     }
 }
