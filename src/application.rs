@@ -39,7 +39,7 @@ pub fn setup_logging(filename: &Path) -> Result<(), fern::InitError> {
             ))
         })
         // Add blanket level filter -
-        .level(log::LevelFilter::Trace)
+        .level(log::LevelFilter::Info)
         // - and per-module overrides
         .level_for("librespot", log::LevelFilter::Debug)
         // Output to stdout, files, and other Dispatch configurations

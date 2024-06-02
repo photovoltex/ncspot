@@ -149,26 +149,6 @@ pub struct QueueState {
     pub queue: Vec<Playable>,
 }
 
-#[derive(Serialize, Default, Deserialize, Debug, Clone)]
-pub enum PlayableContext {
-    Artist(String),
-    Album(String),
-    Playlist(String),
-    #[default]
-    Collection,
-}
-
-impl PlayableContext {
-    pub fn uri(&self, user: &str) -> String {
-        match self {
-            PlayableContext::Artist(uri)
-            | PlayableContext::Album(uri)
-            | PlayableContext::Playlist(uri) => uri.clone(),
-            PlayableContext::Collection => format!("{user}:collection"),
-        }
-    }
-}
-
 /// Runtime state that should be persisted accross sessions.
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct UserState {

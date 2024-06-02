@@ -88,6 +88,8 @@ impl Worker {
             mut spirc_events,
         } = handle;
 
+        spirc.activate().unwrap();
+
         debug!("created handle successfully");
 
         let mut ui_refresh = time::interval(Duration::from_millis(400));

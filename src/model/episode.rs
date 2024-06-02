@@ -14,7 +14,7 @@ pub struct Episode {
     pub id: String,
     pub uri: String,
     pub queued: bool,
-    pub context: String,
+    pub context: Option<String>,
     pub duration: u32,
     pub name: String,
     pub description: String,
@@ -35,6 +35,8 @@ impl From<&SimplifiedEpisode> for Episode {
         Self {
             id: episode.id.id().to_string(),
             uri: episode.id.uri(),
+            context: None,
+            queued: false,
             duration: episode.duration.num_milliseconds() as u32,
             name: episode.name.clone(),
             description: episode.description.clone(),
@@ -51,6 +53,8 @@ impl From<&FullEpisode> for Episode {
         Self {
             id: episode.id.id().to_string(),
             uri: episode.id.uri(),
+            context: None,
+            queued: false,
             duration: episode.duration.num_milliseconds() as u32,
             name: episode.name.clone(),
             description: episode.description.clone(),

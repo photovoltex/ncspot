@@ -91,7 +91,7 @@ impl Playable {
         }
     }
 
-    pub fn context(&self) -> String {
+    pub fn context(&self) -> Option<String> {
         match self {
             Playable::Track(track) => track.context.clone(),
             Playable::Episode(episode) => episode.context.clone(),
@@ -148,7 +148,7 @@ impl Playable {
         TrackRef {
             uri: Some(self.uri()),
             queued: Some(self.is_queued()),
-            context: Some(self.context()),
+            context: self.context(),
             ..Default::default()
         }
     }

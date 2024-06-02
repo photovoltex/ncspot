@@ -21,7 +21,7 @@ pub struct Track {
     pub id: Option<String>,
     pub uri: String,
     pub queued: bool,
-    pub context: String,
+    pub context: Option<String>,
     pub title: String,
     pub track_number: u32,
     pub disc_number: i32,
@@ -59,6 +59,8 @@ impl Track {
         Self {
             id: track.id.as_ref().map(|id| id.id().to_string()),
             uri: track.id.as_ref().map(|id| id.uri()).unwrap_or_default(),
+            context: None,
+            queued: false,
             title: track.name.clone(),
             track_number: track.track_number,
             disc_number: track.disc_number,
@@ -97,6 +99,8 @@ impl From<&SimplifiedTrack> for Track {
         Self {
             id: track.id.as_ref().map(|id| id.id().to_string()),
             uri: track.id.as_ref().map(|id| id.uri()).unwrap_or_default(),
+            context: None,
+            queued: false,
             title: track.name.clone(),
             track_number: track.track_number,
             disc_number: track.disc_number,
@@ -137,6 +141,8 @@ impl From<&FullTrack> for Track {
         Self {
             id: track.id.as_ref().map(|id| id.id().to_string()),
             uri: track.id.as_ref().map(|id| id.uri()).unwrap_or_default(),
+            context: None,
+            queued: false,
             title: track.name.clone(),
             track_number: track.track_number,
             disc_number: track.disc_number,
