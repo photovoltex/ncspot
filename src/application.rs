@@ -225,11 +225,12 @@ impl Application {
                         info!("device event fired")
                     }
                     Event::Connect(connect) => {
-                        if !matches!(connect, ConnectEvent::Queue(..)) {
-                            debug!("connect event received: {:?}", connect);
-                        } else {
-                            debug!("event received: Queue");
+                        match &connect {
+                            ConnectEvent::QueueRemove(vec) => debug!("event received: QueueRemove({})", vec.len()),
+                            ConnectEvent::QueueAdd(vec) => debug!("event received: QueueAdd({})", vec.len()),
+                            other => debug!("connect event received: {other:?}")
                         }
+
                         self.queue.update_status(connect);
                     }
                     Event::Player(state) => {

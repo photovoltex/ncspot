@@ -1,8 +1,6 @@
 use std::cmp::Ordering;
-use std::ops::DerefMut;
-use std::sync::{Arc, RwLock, RwLockWriteGuard};
+use std::sync::{Arc, RwLock};
 use std::time::Duration;
-use librespot_core::SpotifyId;
 
 use librespot_protocol::spirc::TrackRef;
 use log::{debug, error, info};
@@ -97,8 +95,8 @@ impl Queue {
             !matches!(self.get_repeat(), RepeatSetting::None),
         );
     }
-    
-    
+
+
 
     pub fn update_status(&self, event: ConnectEvent) {
         match event {
@@ -110,7 +108,7 @@ impl Queue {
             }
             ConnectEvent::Index(index) => {
                 if try_acquire_write(named_lock!(self.current_track), |ctx| *ctx = Some(index)) {
-                    self.spotify.update_track()   
+                    self.spotify.update_track()
                 }
             },
             ConnectEvent::Position(pos) => {
@@ -118,7 +116,7 @@ impl Queue {
                     self.spotify.update_position(Duration::from_millis(pos.into()))
                 }
             }
-            ConnectEvent::Queue(tracks) => {                
+            ConnectEvent::QueueClear => {
                 let mut queue = match self.queue.write() {
                     Ok(current) => current,
                     Err(_) => {
@@ -127,30 +125,65 @@ impl Queue {
                     },
                 };
                 queue.clear();
+            }
+            ConnectEvent::QueueAdd(new_tracks) => {
+                let mut queue = match self.queue.write() {
+                    Ok(current) => current,
+                    Err(_) => {
+                        log::error!("writing to queue failed");
+                        return;
+                    },
+                };
 
-                for (i, chunk) in tracks.chunks(50).enumerate() {
-                    debug!("requesting chunk {} for queue update", i + 1);
+                for (i, track_chunk) in new_tracks.chunks(50).enumerate() {
+                    debug!("requesting {}. chunk for queue update", i + 1);
 
-                    let track_ids = chunk.iter().flat_map(|track| {
-                        let uri = match (track.uri.as_ref(), track.gid.as_ref()) {
-                            (Some(uri), _) => Some(uri.clone()),
-                            (None, Some(gid)) => SpotifyId::try_from(gid).map(|id| id.to_uri().ok()).ok().flatten(),
-                            _ => None
-                        }?;
-                        
+                    let ids = track_chunk.iter().flat_map(|(_, track)| {
                         // todo: parsing from SpotifyId only gives us the id, it can't predict if its a episode or a track
-                        let uri = uri.replace("unknown", "track");
-                        TrackId::from_uri(&uri).ok().map(|i| i.clone_static())
-                    }).collect();
+                        let uri = track.uri().replace("unknown", "track");
+                        TrackId::from_uri(&uri).ok().map(|t| t.clone_static())
+                    }).collect::<Vec<_>>();
 
-                    if let Some(tracks) = self.spotify.api.tracks(track_ids) {
-                        let mut tracks = tracks.iter().map(|t| {
+                    if let Some(tracks) = self.spotify.api.tracks(ids) {
+                        for (playable, (i, _)) in tracks.iter().map(|t| {
                             let track: Track = t.into();
                             Playable::Track(track)
-                        }).collect();
+                        }).zip(track_chunk) {
+                            let playable_uri = playable.uri();
 
-                        queue.append(&mut tracks)
+                            info!("added at {i}: '{playable}'");
+                            queue.push(playable);
+
+                            let i = *i;
+                            if let Some(queue_playable) = queue.get(i) {
+                                if queue_playable.uri().ne(&playable_uri) {
+                                    if i < queue.len()  {
+                                        _ = queue.swap_remove(i);
+                                    } else if i >= queue.len() {
+                                        info!("no removing needed")
+                                    }
+                                } else {
+                                    info!("item is already at the correct position")
+                                }
+                            } else {
+                                info!("expected index is out of bounce")
+                            }
+                        };
                     }
+                }
+            }
+            ConnectEvent::QueueRemove(removable) => {
+                let mut queue = match self.queue.write() {
+                    Ok(current) => current,
+                    Err(_) => {
+                        log::error!("writing to queue failed");
+                        return;
+                    },
+                };
+
+                for (i, _) in removable {
+                    let playable = queue.remove(i);
+                    info!("removed at {i}: '{playable}'")
                 }
             }
         }
@@ -184,7 +217,7 @@ impl Queue {
     pub fn get_context(&self) -> String {
         match self.context.read() {
             Ok(context) => context.clone(),
-            Err(why) => why.into_inner().clone() 
+            Err(why) => why.into_inner().clone()
         }
     }
 
@@ -194,7 +227,7 @@ impl Queue {
             .and_then(|index| match self.queue.read() {
                 Ok(queue) if index < queue.len()  => Some(queue[index].clone()),
                 Ok(q) => {
-                    error!("given index is out of bounds");
+                    error!("index {index} is out of bounds of {}", q.len());
                     None
                 }
                 Err(_) => {

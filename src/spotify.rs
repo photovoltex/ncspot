@@ -20,7 +20,7 @@ use librespot_connect::spirc::SpircLoadCommand;
 use librespot_protocol::spirc::TrackRef;
 use std::env;
 use std::str::FromStr;
-use std::sync::{Arc, LockResult, RwLock};
+use std::sync::{Arc, RwLock};
 use std::time::{Duration, SystemTime};
 
 use crate::application::ASYNC_RUNTIME;
@@ -322,7 +322,7 @@ impl Spotify {
             .expect("could not acquire write lock on player status");
         *status = new_status;
     }
-    
+
     pub fn update_position(&self, position: Duration) {
         self.set_elapsed(Some(position));
         self.set_since(None);
