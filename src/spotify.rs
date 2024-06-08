@@ -323,11 +323,6 @@ impl Spotify {
         *status = new_status;
     }
 
-    pub fn update_position(&self, position: Duration) {
-        self.set_elapsed(Some(position));
-        self.set_since(None);
-    }
-
     pub fn update_track(&self) {
         self.set_elapsed(None);
         self.set_since(None);

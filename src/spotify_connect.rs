@@ -138,7 +138,6 @@ pub enum ConnectEvent {
     Repeat(bool),
     Context(String),
     Index(usize),
-    Position(u32),
     QueueClear,
     QueueAdd(Vec<(usize, TrackRef)>),
     QueueRemove(Vec<(usize, TrackRef)>),
@@ -188,20 +187,16 @@ impl ConnectState {
             event_manager.send(ConnectEvent::Context(self.context_uri.clone()).into())
         }
 
-        _ = assign_if_new_value(&mut self.position_measured_at, state.position_measured_at());
-
-        let should_update_position = self.should_update_position_ms();
-        if assign_if_new_value(&mut self.position_ms, state.position_ms()) && should_update_position
-        {
-            event_manager.send(ConnectEvent::Position(self.position_ms).into())
-        }
-
         if assign_if_new_value(&mut self.playing_track_index, state.playing_track_index()) {
             let index = self.playing_track_index.try_into().unwrap_or_default();
             event_manager.send(ConnectEvent::Index(index).into())
         }
 
-        let status = assign_if_new_value(&mut self.status, state.status())
+        _ = assign_if_new_value(&mut self.position_measured_at, state.position_measured_at());
+        let should_update_position = self.should_update_position_ms();
+        let position_has_change = assign_if_new_value(&mut self.position_ms, state.position_ms()) && should_update_position;
+
+        let status = (assign_if_new_value(&mut self.status, state.status()) || position_has_change)
             .then(|| match self.status {
                 PlayStatus::kPlayStatusStop => Some(PlayerEvent::Stopped),
                 PlayStatus::kPlayStatusPlay => Some(PlayerEvent::Playing(

@@ -111,11 +111,6 @@ impl Queue {
                     self.spotify.update_track()
                 }
             },
-            ConnectEvent::Position(pos) => {
-                if try_acquire_write(named_lock!(self.last_position), |ctx| *ctx = pos) {
-                    self.spotify.update_position(Duration::from_millis(pos.into()))
-                }
-            }
             ConnectEvent::QueueClear => {
                 let mut queue = match self.queue.write() {
                     Ok(current) => current,
