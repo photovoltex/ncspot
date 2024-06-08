@@ -16,6 +16,7 @@ use librespot_protocol::spirc::{DeviceState, PlayStatus, State, TrackRef};
 use log::{debug, warn};
 use crate::events::{Event, EventManager};
 use crate::spotify::PlayerEvent;
+use crate::utils::assign_if_new_value;
 
 const MEASURED_AT_TOLERATION: Duration = Duration::from_secs(2);
 
@@ -145,16 +146,7 @@ impl From<ConnectEvent> for Event {
     }
 }
 
-impl ConnectState {
-    fn assign_if_new_value<T: Eq>(field: &mut T, new_value: T) -> bool {
-        if new_value.ne(field) {
-            *field = new_value;
-            true
-        } else {
-            false
-        }
-    }
-    
+impl ConnectState {    
     fn should_update_position_ms(&self) -> bool {
         let time = SystemTime::now();
         let measured_at = UNIX_EPOCH + Duration::from_millis(self.position_measured_at);
@@ -165,31 +157,31 @@ impl ConnectState {
     
     pub fn update_state(&mut self, state: State, event_manager: &EventManager) {
         debug!("update state");
-        if Self::assign_if_new_value(&mut self.shuffle, state.shuffle()) {
+        if assign_if_new_value(&mut self.shuffle, state.shuffle()) {
             event_manager.send(ConnectEvent::Shuffle(self.shuffle).into())
         }
         
-        if Self::assign_if_new_value(&mut self.repeat, state.repeat()) {
+        if assign_if_new_value(&mut self.repeat, state.repeat()) {
             event_manager.send(ConnectEvent::Repeat(self.repeat).into())
         }
 
-        if Self::assign_if_new_value(&mut self.context_uri, state.context_uri().to_string()) {
+        if assign_if_new_value(&mut self.context_uri, state.context_uri().to_string()) {
             event_manager.send(ConnectEvent::Context(self.context_uri.clone()).into())
         }
 
-        if Self::assign_if_new_value(&mut self.index, state.index()) {
+        if assign_if_new_value(&mut self.index, state.index()) {
             let index = self.index.try_into().unwrap_or_default();
             event_manager.send(ConnectEvent::Index(index).into())
         }
 
-        _ = Self::assign_if_new_value(&mut self.position_measured_at, state.position_measured_at());
+        _ = assign_if_new_value(&mut self.position_measured_at, state.position_measured_at());
             
         let should_update_position = self.should_update_position_ms();
-        if Self::assign_if_new_value(&mut self.position_ms, state.position_ms()) && should_update_position {
+        if assign_if_new_value(&mut self.position_ms, state.position_ms()) && should_update_position {
             event_manager.send(ConnectEvent::Position(self.position_ms).into())
         }
 
-        let status = Self::assign_if_new_value(&mut self.status, state.status()).then(|| match self.status {
+        let status = assign_if_new_value(&mut self.status, state.status()).then(|| match self.status {
             PlayStatus::kPlayStatusStop => Some(PlayerEvent::Stopped),
             PlayStatus::kPlayStatusPlay => Some(PlayerEvent::Playing(UNIX_EPOCH + Duration::from_millis(self.position_measured_at) - Duration::from_millis(self.position_ms.into()))),
             PlayStatus::kPlayStatusPause => Some(PlayerEvent::Paused(Duration::from_millis(self.position_ms.into()))),
@@ -203,6 +195,8 @@ impl ConnectState {
             event_manager.send(ConnectEvent::Queue(self.track.clone()).into());
         }
 
+        // logic wise we should only send the status updated after all other information's are loaded, 
+        // otherwise we might access, for example the index of an empty queue :)
         if let Some(status) = status {
             event_manager.send(Event::Player(status))
         }

@@ -18,6 +18,7 @@ use crate::model::track::Track;
 use crate::spotify::PlayerEvent;
 use crate::spotify::Spotify;
 use crate::spotify_connect::ConnectEvent;
+use crate::utils::{named_lock, try_acquire_write};
 
 /// Repeat behavior for the [Queue].
 #[derive(Display, Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize)]
@@ -43,12 +44,6 @@ pub struct Queue {
     spotify: Spotify,
     cfg: Arc<Config>,
     library: Arc<Library>,
-}
-
-macro_rules! named_lock {
-    ( $self:ident.$field:ident ) => {
-        (stringify!($field), &$self.$field)
-    };
 }
 
 impl Queue {
@@ -103,17 +98,7 @@ impl Queue {
         );
     }
     
-    fn try_acquire_write<T>((name, lock): (&str, &RwLock<T>), use_res: impl FnOnce(&mut T)) -> bool {
-        let res = lock.write();
-        let successful_acquired = res.is_ok();
-        
-        match res {
-            Ok(mut res) => use_res(res.deref_mut()),
-            Err(_) => error!("couldn't acquire write lock for {name}"),
-        };
-
-        successful_acquired
-    }
+    
 
     pub fn update_status(&self, event: ConnectEvent) {
         match event {
@@ -121,15 +106,15 @@ impl Queue {
             ConnectEvent::Repeat(repeat) if !repeat => self.set_repeat(RepeatSetting::None),
             ConnectEvent::Repeat(_) => self.set_repeat(self.spotify.api.get_repeat()),
             ConnectEvent::Context(context) => {
-                Self::try_acquire_write(named_lock!(self.context), |ctx| *ctx = context);
+                try_acquire_write(named_lock!(self.context), |ctx| *ctx = context);
             }
             ConnectEvent::Index(index) => {
-                if Self::try_acquire_write(named_lock!(self.current_track), |ctx| *ctx = Some(index)) {
+                if try_acquire_write(named_lock!(self.current_track), |ctx| *ctx = Some(index)) {
                     self.spotify.update_track()   
                 }
             },
             ConnectEvent::Position(pos) => {
-                if Self::try_acquire_write(named_lock!(self.last_position), |ctx| *ctx = pos) {
+                if try_acquire_write(named_lock!(self.last_position), |ctx| *ctx = pos) {
                     self.spotify.update_position(Duration::from_millis(pos.into()))
                 }
             }

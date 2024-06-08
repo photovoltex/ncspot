@@ -1,6 +1,10 @@
 #![allow(dead_code)]
 
 use std::fmt::Write;
+use std::ops::DerefMut;
+use std::sync::RwLock;
+
+use log::error;
 
 /// Returns a human readable String of a Duration
 ///
@@ -58,4 +62,35 @@ pub fn download(url: String, path: std::path::PathBuf) -> Result<(), std::io::Er
 
     std::io::copy(&mut resp, &mut file)?;
     Ok(())
+}
+
+macro_rules! named_lock {
+    ( $self:ident.$field:ident ) => {
+        (stringify!($field), &$self.$field)
+    };
+}
+pub(crate) use named_lock;
+
+pub fn try_acquire_write<T>(
+    (name, lock): (&str, &RwLock<T>),
+    use_resource: impl FnOnce(&mut T),
+) -> bool {
+    let locked_resource = lock.write();
+    let successful_acquired = locked_resource.is_ok();
+
+    match locked_resource {
+        Ok(mut resource) => use_resource(resource.deref_mut()),
+        Err(_) => error!("couldn't acquire write lock for {name}"),
+    };
+
+    successful_acquired
+}
+
+pub fn assign_if_new_value<T: Eq>(field: &mut T, new_value: T) -> bool {
+    if new_value.ne(field) {
+        *field = new_value;
+        true
+    } else {
+        false
+    }
 }
