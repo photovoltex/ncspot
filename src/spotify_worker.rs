@@ -229,9 +229,7 @@ impl Worker {
                     break
                 },
                 _ = ui_refresh.tick() => {
-                    if self.active {
-                        self.events.trigger();
-                    }
+                    self.events.trigger();
                 },
                 _ = self.token_task.as_mut() => {
                     info!("token updated!");
