@@ -1,17 +1,23 @@
 use std::cmp::Ordering;
-use std::sync::{Arc, RwLock};
+use std::ops::DerefMut;
+use std::sync::{Arc, RwLock, RwLockWriteGuard};
+use std::time::Duration;
+use librespot_core::SpotifyId;
 
 use librespot_protocol::spirc::TrackRef;
-use log::info;
+use log::{debug, error, info};
 #[cfg(feature = "notify")]
 use notify_rust::Notification;
+use rspotify::model::TrackId;
 use strum_macros::Display;
 
 use crate::config::{Config, PlaybackState};
 use crate::library::Library;
 use crate::model::playable::Playable;
+use crate::model::track::Track;
 use crate::spotify::PlayerEvent;
 use crate::spotify::Spotify;
+use crate::spotify_connect::ConnectEvent;
 
 /// Repeat behavior for the [Queue].
 #[derive(Display, Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize)]
@@ -31,13 +37,18 @@ pub struct Queue {
     /// The internal data, which doesn't change with shuffle or repeat. This is
     /// the raw data only.
     pub queue: Arc<RwLock<Vec<Playable>>>,
-    // /// The playback order of the queue, as indices into `self.queue`.
-    // random_order: RwLock<Option<Vec<usize>>>,
-    context: String,
+    context: RwLock<String>,
     current_track: RwLock<Option<usize>>,
+    last_position: RwLock<u32>,
     spotify: Spotify,
     cfg: Arc<Config>,
     library: Arc<Library>,
+}
+
+macro_rules! named_lock {
+    ( $self:ident.$field:ident ) => {
+        (stringify!($field), &$self.$field)
+    };
 }
 
 impl Queue {
@@ -45,12 +56,13 @@ impl Queue {
         let queue_state = cfg.state().queuestate.clone();
         let playback_state = cfg.state().playback_state.clone();
 
-        let tracks: Vec<TrackRef> = Queue::list_as_tracks(&queue_state.queue); 
+        let tracks: Vec<TrackRef> = Queue::list_as_tracks(&queue_state.queue);
         let queue = Queue {
             queue: Arc::new(RwLock::new(queue_state.queue)),
-            context: queue_state.context.clone(),
+            context: RwLock::new(queue_state.context.clone()),
             spotify: spotify.clone(),
             current_track: RwLock::new(queue_state.current_track),
+            last_position: RwLock::new(0),
             cfg,
             library,
         };
@@ -70,8 +82,93 @@ impl Queue {
         queue
     }
 
-    fn list_as_tracks(list: &Vec<Playable>) -> Vec<TrackRef> {
+    fn list_as_tracks(list: &[Playable]) -> Vec<TrackRef> {
         list.iter().map(Playable::as_trackref).collect()
+    }
+
+    pub fn takeover_control(&self) {
+        self.spotify.activate();
+
+        let tracks = Self::list_as_tracks(&self.queue.read().unwrap());
+        // todo: get current position
+        let current_pos = 0;
+        self.spotify.load(
+            self.get_context(),
+            tracks,
+            self.get_current_index().unwrap(),
+            true,
+            current_pos,
+            self.get_shuffle(),
+            !matches!(self.get_repeat(), RepeatSetting::None),
+        );
+    }
+    
+    fn try_acquire_write<T>((name, lock): (&str, &RwLock<T>), use_res: impl FnOnce(&mut T)) -> bool {
+        let res = lock.write();
+        let successful_acquired = res.is_ok();
+        
+        match res {
+            Ok(mut res) => use_res(res.deref_mut()),
+            Err(_) => error!("couldn't acquire write lock for {name}"),
+        };
+
+        successful_acquired
+    }
+
+    pub fn update_status(&self, event: ConnectEvent) {
+        match event {
+            ConnectEvent::Shuffle(shuffle) => self.set_shuffle(shuffle),
+            ConnectEvent::Repeat(repeat) if !repeat => self.set_repeat(RepeatSetting::None),
+            ConnectEvent::Repeat(_) => self.set_repeat(self.spotify.api.get_repeat()),
+            ConnectEvent::Context(context) => {
+                Self::try_acquire_write(named_lock!(self.context), |ctx| *ctx = context);
+            }
+            ConnectEvent::Index(index) => {
+                if Self::try_acquire_write(named_lock!(self.current_track), |ctx| *ctx = Some(index)) {
+                    self.spotify.update_track()   
+                }
+            },
+            ConnectEvent::Position(pos) => {
+                if Self::try_acquire_write(named_lock!(self.last_position), |ctx| *ctx = pos) {
+                    self.spotify.update_position(Duration::from_millis(pos.into()))
+                }
+            }
+            ConnectEvent::Queue(tracks) => {                
+                let mut queue = match self.queue.write() {
+                    Ok(current) => current,
+                    Err(_) => {
+                        log::error!("writing to queue failed");
+                        return;
+                    },
+                };
+                queue.clear();
+
+                for (i, chunk) in tracks.chunks(50).enumerate() {
+                    debug!("requesting chunk {} for queue update", i + 1);
+
+                    let track_ids = chunk.iter().flat_map(|track| {
+                        let uri = match (track.uri.as_ref(), track.gid.as_ref()) {
+                            (Some(uri), _) => Some(uri.clone()),
+                            (None, Some(gid)) => SpotifyId::try_from(gid).map(|id| id.to_uri().ok()).ok().flatten(),
+                            _ => None
+                        }?;
+                        
+                        // todo: parsing from SpotifyId only gives us the id, it can't predict if its a episode or a track
+                        let uri = uri.replace("unknown", "track");
+                        TrackId::from_uri(&uri).ok().map(|i| i.clone_static())
+                    }).collect();
+
+                    if let Some(tracks) = self.spotify.api.tracks(track_ids) {
+                        let mut tracks = tracks.iter().map(|t| {
+                            let track: Track = t.into();
+                            Playable::Track(track)
+                        }).collect();
+
+                        queue.append(&mut tracks)
+                    }
+                }
+            }
+        }
     }
 
     /// The index of the next item in `self.queue` that should be played. None
@@ -100,13 +197,26 @@ impl Queue {
     }
 
     pub fn get_context(&self) -> String {
-        self.context.clone()
+        match self.context.read() {
+            Ok(context) => context.clone(),
+            Err(why) => why.into_inner().clone() 
+        }
     }
 
     /// The currently playing item from `self.queue`.
     pub fn get_current(&self) -> Option<Playable> {
         self.get_current_index()
-            .map(|index| self.queue.read().unwrap()[index].clone())
+            .and_then(|index| match self.queue.read() {
+                Ok(queue) if index < queue.len()  => Some(queue[index].clone()),
+                Ok(q) => {
+                    error!("given index is out of bounds");
+                    None
+                }
+                Err(_) => {
+                    error!("couldn't acquire write lock for queue");
+                    None
+                }
+            })
     }
 
     /// The index of the currently playing item from `self.queue`.
@@ -238,9 +348,17 @@ impl Queue {
             let tracks = Queue::list_as_tracks(&queue);
             let repeat = !matches!(self.get_repeat(), RepeatSetting::None);
 
-            self.spotify.load(self.context.clone(), tracks, index, true, 0, shuffle, repeat);
+            self.spotify.load(
+                self.get_context(),
+                tracks,
+                index,
+                true,
+                0,
+                shuffle,
+                repeat,
+            );
             self.set_shuffle(shuffle);
-            
+
             let mut current = self.current_track.write().unwrap();
             current.replace(index);
             self.spotify.update_track();
@@ -299,7 +417,7 @@ impl Queue {
     /// when going to the next entry in the queue is the wanted behavior.
     pub fn next(&self, manual: bool) {
         self.spotify.api.next(None);
-        
+
         let q = self.queue.read().unwrap();
         let current = *self.current_track.read().unwrap();
 
@@ -348,7 +466,7 @@ impl Queue {
     /// Set the current repeat behavior and save it to the configuration.
     pub fn set_repeat(&self, new: RepeatSetting) {
         if new == self.get_repeat() {
-            return
+            return;
         }
 
         self.spotify.api.set_repeat(new, None);
@@ -363,9 +481,9 @@ impl Queue {
     /// Set the current shuffle behavior.
     pub fn set_shuffle(&self, new: bool) {
         if new == self.get_shuffle() {
-            return
+            return;
         }
-        
+
         self.spotify.api.set_shuffle(new, None);
         self.cfg.with_state_mut(|mut s| s.shuffle = new);
     }

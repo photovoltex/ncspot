@@ -272,7 +272,7 @@ impl Library {
             for (index, remote) in lists.iter().enumerate() {
                 list_order.push(remote.id.clone());
 
-                // remove from stale playlists so we won't prune it later on
+                // remove from stale playlists, so we won't prune it later on
                 if let Some(index) = stale_lists.iter().position(|x| x.id == remote.id) {
                     stale_lists.remove(index);
                 }

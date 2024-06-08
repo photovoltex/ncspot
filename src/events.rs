@@ -2,8 +2,11 @@ use crossbeam_channel::{unbounded, Receiver, Sender, TryIter};
 use cursive::{CbSink, Cursive};
 
 use crate::spotify::PlayerEvent;
+use crate::spotify_connect::{ConnectEvent, DeviceEvent};
 
 pub enum Event {
+    Connect(ConnectEvent),
+    Device(DeviceEvent),
     Player(PlayerEvent),
     SessionDied,
     IpcInput(String),

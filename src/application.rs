@@ -16,6 +16,7 @@ use crate::events::{Event, EventManager};
 use crate::library::Library;
 use crate::queue::Queue;
 use crate::spotify::{PlayerEvent, Spotify};
+use crate::spotify_connect::ConnectEvent;
 use crate::ui::create_cursive;
 use crate::{authentication, ui};
 
@@ -217,10 +218,22 @@ impl Application {
                     }
                 }
             }
+
             for event in self.event_manager.msg_iter() {
                 match event {
+                    Event::Device(device) => {
+                        info!("device event fired")
+                    }
+                    Event::Connect(connect) => {
+                        if !matches!(connect, ConnectEvent::Queue(..)) {
+                            debug!("connect event received: {:?}", connect);
+                        } else {
+                            debug!("event received: Queue");
+                        }
+                        self.queue.update_status(connect);
+                    }
                     Event::Player(state) => {
-                        trace!("event received: {:?}", state);
+                        debug!("player event received: {:?}", state);
                         self.spotify.update_status(state.clone());
 
                         #[cfg(feature = "mpris")]

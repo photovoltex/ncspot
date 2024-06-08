@@ -20,7 +20,7 @@ use librespot_connect::spirc::SpircLoadCommand;
 use librespot_protocol::spirc::TrackRef;
 use std::env;
 use std::str::FromStr;
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, LockResult, RwLock};
 use std::time::{Duration, SystemTime};
 
 use crate::application::ASYNC_RUNTIME;
@@ -248,11 +248,10 @@ impl Spotify {
     }
 
     fn set_elapsed(&self, new_elapsed: Option<Duration>) {
-        let mut elapsed = self
-            .elapsed
-            .write()
-            .expect("could not acquire write lock on elapsed time");
-        *elapsed = new_elapsed;
+        match self.elapsed.write() {
+            Ok(mut current) => *current = new_elapsed,
+            Err(_) => error!("could not acquire write lock on elapsed time")
+        }
     }
 
     fn get_elapsed(&self) -> Option<Duration> {
@@ -264,11 +263,10 @@ impl Spotify {
     }
 
     fn set_since(&self, new_since: Option<SystemTime>) {
-        let mut since = self
-            .since
-            .write()
-            .expect("could not acquire write lock on since time");
-        *since = new_since;
+        match self.since.write() {
+            Ok(mut current) => *current = new_since,
+            Err(_) => error!("could not acquire write lock on since time")
+        }
     }
 
     fn get_since(&self) -> Option<SystemTime> {
@@ -323,6 +321,11 @@ impl Spotify {
             .write()
             .expect("could not acquire write lock on player status");
         *status = new_status;
+    }
+    
+    pub fn update_position(&self, position: Duration) {
+        self.set_elapsed(Some(position));
+        self.set_since(None);
     }
 
     pub fn update_track(&self) {

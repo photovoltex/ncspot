@@ -12,8 +12,10 @@ use chrono::{DateTime, Duration as ChronoDuration, Utc};
 use futures::channel::oneshot;
 use log::{debug, error, info};
 
+use crate::queue::RepeatSetting;
+use cursive::With;
 use rspotify::http::HttpError;
-use rspotify::model::{AlbumId, AlbumType, ArtistId, CursorBasedPage, EpisodeId, FullAlbum, FullArtist, FullEpisode, FullPlaylist, FullShow, FullTrack, ItemPositions, Market, Page, PlayableId, PlaylistId, PrivateUser, Recommendations, RepeatState, SavedAlbum, SavedTrack, SearchResult, SearchType, Show, ShowId, SimplifiedTrack, TrackId, UserId};
+use rspotify::model::{AdditionalType, AlbumId, AlbumType, ArtistId, CursorBasedPage, EpisodeId, FullAlbum, FullArtist, FullEpisode, FullPlaylist, FullShow, FullTrack, ItemPositions, Market, Page, PlayableId, PlaylistId, PrivateUser, Recommendations, RepeatState, SavedAlbum, SavedTrack, SearchResult, SearchType, Show, ShowId, SimplifiedTrack, TrackId, UserId};
 use rspotify::{prelude::*, AuthCodeSpotify, ClientError, ClientResult, Token};
 use std::collections::HashSet;
 use std::iter::FromIterator;
@@ -21,7 +23,6 @@ use std::sync::{Arc, RwLock};
 use std::thread;
 use std::time::Duration;
 use tokio::sync::mpsc;
-use crate::queue::RepeatSetting;
 
 #[derive(Clone)]
 pub struct WebApi {
@@ -33,9 +34,8 @@ pub struct WebApi {
 
 impl Default for WebApi {
     fn default() -> Self {
-        // todo: auth client has to be initialized with config, so automatic re-auth isn't used
         Self {
-            api: AuthCodeSpotify::default(),
+            api: AuthCodeSpotify::default().with(|api| api.config.token_refreshing = false),
             user: None,
             worker_channel: Arc::new(RwLock::new(None)),
             token_expiration: Arc::new(RwLock::new(Utc::now())),
@@ -283,6 +283,11 @@ impl WebApi {
         let tid = TrackId::from_id(track_id).ok()?;
         self.api_with_retry(|api| api.track(tid.clone(), Some(Market::FromToken)))
     }
+
+    pub fn tracks(&self, tracks: Vec<TrackId>) -> Option<Vec<FullTrack>> {
+        self.api_with_retry(move |api| api.tracks(tracks.clone(), Some(Market::FromToken)))
+    }
+
 
     pub fn get_show(&self, show_id: &str) -> Option<FullShow> {
         let sid = ShowId::from_id(show_id).ok()?;
@@ -658,7 +663,7 @@ impl WebApi {
     pub fn current_user(&self) -> Option<PrivateUser> {
         self.api_with_retry(|api| api.current_user())
     }
-    
+
     pub fn set_shuffle(&self, shuffle: bool, device: Option<&str>) {
         _ = self.api_with_retry(|api| api.shuffle(shuffle, device));
     }
@@ -667,15 +672,15 @@ impl WebApi {
         let repeat = match repeat {
             RepeatSetting::None => RepeatState::Off,
             RepeatSetting::RepeatPlaylist => RepeatState::Context,
-            RepeatSetting::RepeatTrack => RepeatState::Track
+            RepeatSetting::RepeatTrack => RepeatState::Track,
         };
         _ = self.api_with_retry(|api| api.repeat(repeat, device));
     }
-    
+
     pub fn queue(&self, item: &Playable, device: Option<&str>) {
         _ = self.api_with_retry(|api| {
             let playable_id: Option<PlayableId> = item.into();
-            api.add_item_to_queue(playable_id.unwrap(), device) 
+            api.add_item_to_queue(playable_id.unwrap(), device)
         });
     }
 
@@ -691,7 +696,19 @@ impl WebApi {
         _ = self.api_with_retry(|api| api.pause_playback(device));
     }
 
-    pub fn resume(&self, duration: Option<ChronoDuration>,  device: Option<&str>) {
+    pub fn resume(&self, duration: Option<ChronoDuration>, device: Option<&str>) {
         _ = self.api_with_retry(|api| api.resume_playback(device, duration));
+    }
+    
+    pub fn get_repeat(&self) -> RepeatSetting {
+        let current = self
+            .api_with_retry(|api| api.current_playback(Some(Market::FromToken), None::<Vec<&AdditionalType>>))
+            .flatten();
+        
+        current.map(|current| match current.repeat_state {
+            RepeatState::Off => RepeatSetting::None,
+            RepeatState::Track => RepeatSetting::RepeatTrack,
+            RepeatState::Context => RepeatSetting::RepeatPlaylist,
+        }).unwrap_or(RepeatSetting::None)
     }
 }

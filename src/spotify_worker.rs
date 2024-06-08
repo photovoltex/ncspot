@@ -1,5 +1,6 @@
-use std::time::Duration;
 use std::{pin::Pin, time::SystemTime};
+use std::fmt::{Display, Formatter};
+use std::time::Duration;
 
 use futures::channel::oneshot;
 use futures::Future;
@@ -11,15 +12,16 @@ use librespot_playback::player::PlayerEvent as LibrespotPlayerEvent;
 use log::{debug, error, info, warn};
 use tokio::sync::mpsc;
 use tokio::time;
-use tokio_stream::wrappers::UnboundedReceiverStream;
 use tokio_stream::StreamExt;
+use tokio_stream::wrappers::UnboundedReceiverStream;
 
 use crate::events::{Event, EventManager};
 use crate::spotify::PlayerEvent;
-use crate::spotify_connect::{Connect, SpircHandle};
+use crate::spotify_connect::{Connect, ConnectDevices, ConnectState, SpircHandle};
 
 #[derive(Debug)]
 pub(crate) enum WorkerCommand {
+    Activate,
     Load(SpircLoadCommand, u32),
     Play,
     Pause,
@@ -30,12 +32,32 @@ pub(crate) enum WorkerCommand {
     Shutdown,
 }
 
+impl Display for WorkerCommand {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        let cmd = match self {
+            WorkerCommand::Activate => "Activate",
+            WorkerCommand::Load(_, _) => "Load",
+            WorkerCommand::Play => "Play",
+            WorkerCommand::Pause => "Pause",
+            WorkerCommand::Stop => "Stop",
+            WorkerCommand::Seek(_) => "Seek",
+            WorkerCommand::SetVolume(_) => "SetVolume",
+            WorkerCommand::RequestToken(_) => "RequestToken",
+            WorkerCommand::Shutdown => "Shutdown",
+        };
+
+        write!(f, "{cmd}")
+    }
+}
+
 pub struct Worker {
     events: EventManager,
     commands: UnboundedReceiverStream<WorkerCommand>,
     connect: Connect,
     token_task: Pin<Box<dyn Future<Output = ()> + Send>>,
     active: bool,
+    last_state: ConnectState,
+    devices: ConnectDevices,
 }
 
 impl Worker {
@@ -50,6 +72,8 @@ impl Worker {
             connect,
             token_task: Box::pin(futures::future::pending()),
             active: false,
+            last_state: ConnectState::default(),
+            devices: ConnectDevices::default(),
         }
     }
 }
@@ -88,7 +112,7 @@ impl Worker {
             mut spirc_events,
         } = handle;
 
-        spirc.activate().unwrap();
+        // spirc.activate().unwrap();
 
         debug!("created handle successfully");
 
@@ -105,38 +129,28 @@ impl Worker {
 
             tokio::select! {
                 cmd = self.commands.next() => match cmd {
-                    Some(WorkerCommand::Load(cmd, position_ms)) => {
-                        // match SpotifyId::from_uri(&playable.uri()) {
-                        //     Ok(id) => {
-                        //         info!("player loading track: {:?}", id);
-                        //         if !id.is_playable() {
-                        //             warn!("track is not playable");
-                        //             self.events.send(Event::Player(PlayerEvent::FinishedTrack));
-                        //         } else {
-                        //             debug!("trying to load {playable}");
-
-                                    // todo: adjust WorkerCommand::Load to provide enough context
-                                    // todo: fix .unwrap()
-
-                                    spirc.load(cmd).unwrap();
-                                    spirc.set_position_ms(position_ms).unwrap()
-                            //     }
-                            // }
-                            // Err(e) => {
-                            //     error!("error parsing uri: {:?}", e);
-                            //     self.events.send(Event::Player(PlayerEvent::FinishedTrack));
-                            // }
-                        // }
+                    Some(WorkerCommand::Activate) => {
+                        if self.active {
+                            warn!("trying to activate already active device")
+                        } else {
+                            // todo: fix .unwrap()
+                            spirc.activate().unwrap()
+                        }
                     }
-                    Some(WorkerCommand::Play) => {
+                    Some(WorkerCommand::Load(cmd, position_ms)) if self.active => {
+                        // todo: fix .unwrap()
+                        spirc.load(cmd).unwrap();
+                        spirc.set_position_ms(position_ms).unwrap()
+                    }
+                    Some(WorkerCommand::Play) if self.active => {
                         // todo: fix .unwrap()
                         spirc.play().unwrap();
                     }
-                    Some(WorkerCommand::Pause) => {
+                    Some(WorkerCommand::Pause) if self.active => {
                         // todo: fix .unwrap()
                         spirc.pause().unwrap();
                     }
-                    Some(WorkerCommand::Stop) => {
+                    Some(WorkerCommand::Stop) if self.active => {
                         // todo: fix .unwrap()
                         spirc.load(SpircLoadCommand {
                             context_uri: "".to_string(),
@@ -147,11 +161,11 @@ impl Worker {
                             tracks: vec![],
                         }).unwrap()
                     }
-                    Some(WorkerCommand::Seek(pos)) => {
+                    Some(WorkerCommand::Seek(pos)) if self.active => {
                         // todo: fix .unwrap()
                         spirc.set_position_ms(pos).unwrap();
                     }
-                    Some(WorkerCommand::SetVolume(volume)) => {
+                    Some(WorkerCommand::SetVolume(volume)) if self.active => {
                         // todo: fix .unwrap()
                         spirc.set_volume(volume).unwrap();
                     }
@@ -162,6 +176,7 @@ impl Worker {
                         // todo: fix unused
                         spirc.shutdown().unwrap();
                     }
+                    Some(cmd) => info!("not active, skipping: {cmd}"),
                     None => info!("empty stream")
                 },
                 event = player_events.unwrap().recv(), if player_events.is_some() => match event {
@@ -199,9 +214,9 @@ impl Worker {
                     },
                     unused_player_event => warn!("unused player event: {unused_player_event:?}")
                 },
-                event = spirc_events.recv() => match event { 
-                    Some(SpircEvent::Playback(_)) => info!("new playback_state"),
-                    Some(SpircEvent::Device(_)) => info!("new device_state"),
+                event = spirc_events.recv() => match event {
+                    Some(SpircEvent::Playback(state)) => self.last_state.update_state(state, &self.events),
+                    Some(SpircEvent::Device(device_state)) => self.devices.update_devices(device_state, &self.events),
                     None => {
                         warn!("Librespot spirc event channel died, terminating worker");
                         break
